@@ -1,0 +1,8 @@
+bin/
+obj/
+temp/
+.vs/
+*.user
+*.suo
+*.pdb
+startup-error.log
