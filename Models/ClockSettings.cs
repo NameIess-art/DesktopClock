@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using DesktopClock.Helpers;
 
 namespace DesktopClock.Models;
 
@@ -14,6 +15,16 @@ public sealed class ClockSettings
 
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public ClockDisplayFormat DisplayFormat { get; set; } = ClockDisplayFormat.HoursMinutes;
+
+    public ClockElementSettings TimeElement { get; set; } = CreateElementDefaults(isVisible: true);
+
+    public ClockElementSettings DateElement { get; set; } = CreateElementDefaults(isVisible: false);
+
+    public ClockElementSettings WeekdayElement { get; set; } = CreateElementDefaults(isVisible: false);
+
+    public bool ShowWeekday { get; set; }
+
+    public bool ShowDate { get; set; }
 
     public string BackgroundColor { get; set; } = "#0F172A";
 
@@ -86,6 +97,53 @@ public sealed class ClockSettings
         {
             GradientColors.Add(GradientColors[0]);
         }
+
+        TimeElement ??= CreateElementDefaults(isVisible: true);
+        DateElement ??= CreateElementDefaults(isVisible: ShowDate);
+        WeekdayElement ??= CreateElementDefaults(isVisible: ShowWeekday);
+
+        TimeElement.Normalize(
+            defaultVisible: true,
+            fallbackFontFamilyName: FontFamilyName,
+            fallbackFillMode: FillMode,
+            fallbackGradientColors: GradientColors,
+            fallbackGradientDirection: GradientDirection);
+        TimeElement.CustomFormat = ClockFormatHelpers.NormalizeTimeFormat(TimeElement.CustomFormat, DisplayFormat);
+        DisplayFormat = ClockFormatHelpers.InferDisplayFormat(TimeElement.CustomFormat);
+        DateElement.Normalize(
+            defaultVisible: ShowDate,
+            fallbackFontFamilyName: FontFamilyName,
+            fallbackFillMode: FillMode,
+            fallbackGradientColors: GradientColors,
+            fallbackGradientDirection: GradientDirection);
+        WeekdayElement.Normalize(
+            defaultVisible: ShowWeekday,
+            fallbackFontFamilyName: FontFamilyName,
+            fallbackFillMode: FillMode,
+            fallbackGradientColors: GradientColors,
+            fallbackGradientDirection: GradientDirection);
+
+        ShowDate = DateElement.IsVisible;
+        ShowWeekday = WeekdayElement.IsVisible;
+    }
+
+    public ClockElementSettings GetElementSettings(ClockDisplayItem item)
+    {
+        return item switch
+        {
+            ClockDisplayItem.Time => TimeElement,
+            ClockDisplayItem.Date => DateElement,
+            ClockDisplayItem.Weekday => WeekdayElement,
+            _ => TimeElement
+        };
+    }
+
+    private static ClockElementSettings CreateElementDefaults(bool isVisible)
+    {
+        return new ClockElementSettings
+        {
+            IsVisible = isVisible
+        };
     }
 
     private static double Clamp(double value, double minimum, double maximum)

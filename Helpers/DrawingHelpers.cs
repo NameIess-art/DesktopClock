@@ -6,6 +6,9 @@ namespace DesktopClock.Helpers;
 
 internal static class DrawingHelpers
 {
+    private static readonly object FontFamilyGate = new();
+    private static readonly Dictionary<string, FontFamily> FontFamilyCache = new(StringComparer.OrdinalIgnoreCase);
+
     internal static Color ParseColor(string? value, Color fallback)
     {
         if (string.IsNullOrWhiteSpace(value))
@@ -27,18 +30,32 @@ internal static class DrawingHelpers
 
     internal static FontFamily ResolveFontFamily(string? fontFamilyName)
     {
-        if (!string.IsNullOrWhiteSpace(fontFamilyName))
+        var key = string.IsNullOrWhiteSpace(fontFamilyName) ? "Segoe UI" : fontFamilyName.Trim();
+
+        lock (FontFamilyGate)
         {
+            if (FontFamilyCache.TryGetValue(key, out var cachedFamily))
+            {
+                return cachedFamily;
+            }
+
             try
             {
-                return new FontFamily(fontFamilyName);
+                var createdFamily = new FontFamily(key);
+                FontFamilyCache[key] = createdFamily;
+                return createdFamily;
             }
             catch
             {
+                if (!FontFamilyCache.TryGetValue("Segoe UI", out var fallbackFamily))
+                {
+                    fallbackFamily = new FontFamily("Segoe UI");
+                    FontFamilyCache["Segoe UI"] = fallbackFamily;
+                }
+
+                return fallbackFamily;
             }
         }
-
-        return new FontFamily("Segoe UI");
     }
 
     internal static FontStyle GetPreferredFontStyle(FontFamily fontFamily)
@@ -131,5 +148,18 @@ internal static class DrawingHelpers
         form.Location = new Point(
             bounds.Left + Math.Max(0, (bounds.Width - form.Width) / 2),
             bounds.Top + Math.Max(0, (bounds.Height - form.Height) / 2));
+    }
+
+    internal static void DisposeCachedResources()
+    {
+        lock (FontFamilyGate)
+        {
+            foreach (var fontFamily in FontFamilyCache.Values)
+            {
+                fontFamily.Dispose();
+            }
+
+            FontFamilyCache.Clear();
+        }
     }
 }

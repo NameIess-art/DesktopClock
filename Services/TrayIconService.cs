@@ -10,8 +10,6 @@ public sealed class TrayIconService : IDisposable
 {
     private readonly NotifyIcon _notifyIcon;
     private readonly ToolStripMenuItem _editModeItem;
-    private readonly ToolStripMenuItem _minutesFormatItem;
-    private readonly ToolStripMenuItem _secondsFormatItem;
     private readonly ToolStripMenuItem _launchAtStartupItem;
     private readonly ThemeIconFactory _themeIconFactory = new();
     private readonly string _fallbackIconPath = Path.Combine(AppContext.BaseDirectory, "clock.ico");
@@ -21,7 +19,6 @@ public sealed class TrayIconService : IDisposable
 
     public TrayIconService(
         Action<bool> onEditModeChanged,
-        Action<ClockDisplayFormat> onDisplayFormatChanged,
         Action onSettingsRequested,
         Action<bool> onLaunchAtStartupChanged,
         Action onExitRequested)
@@ -44,16 +41,6 @@ public sealed class TrayIconService : IDisposable
             }
         };
 
-        _minutesFormatItem = new ToolStripMenuItem("HH:mm");
-        _minutesFormatItem.Click += (_, _) => onDisplayFormatChanged(ClockDisplayFormat.HoursMinutes);
-
-        _secondsFormatItem = new ToolStripMenuItem("HH:mm:ss");
-        _secondsFormatItem.Click += (_, _) => onDisplayFormatChanged(ClockDisplayFormat.HoursMinutesSeconds);
-
-        var displayFormatItem = new ToolStripMenuItem("显示格式");
-        displayFormatItem.DropDownItems.Add(_minutesFormatItem);
-        displayFormatItem.DropDownItems.Add(_secondsFormatItem);
-
         var settingsItem = new ToolStripMenuItem("设置...");
         settingsItem.Click += (_, _) => onSettingsRequested();
 
@@ -74,7 +61,6 @@ public sealed class TrayIconService : IDisposable
 
         _notifyIcon.ContextMenuStrip = new ContextMenuStrip();
         _notifyIcon.ContextMenuStrip.Items.Add(_editModeItem);
-        _notifyIcon.ContextMenuStrip.Items.Add(displayFormatItem);
         _notifyIcon.ContextMenuStrip.Items.Add(settingsItem);
         _notifyIcon.ContextMenuStrip.Items.Add(_launchAtStartupItem);
         _notifyIcon.ContextMenuStrip.Items.Add(new ToolStripSeparator());
@@ -89,8 +75,6 @@ public sealed class TrayIconService : IDisposable
         _isUpdatingMenuState = true;
         _editModeItem.Checked = settings.IsEditMode;
         _launchAtStartupItem.Checked = settings.LaunchAtStartup;
-        _minutesFormatItem.Checked = settings.DisplayFormat == ClockDisplayFormat.HoursMinutes;
-        _secondsFormatItem.Checked = settings.DisplayFormat == ClockDisplayFormat.HoursMinutesSeconds;
         _isUpdatingMenuState = false;
     }
 
@@ -100,6 +84,7 @@ public sealed class TrayIconService : IDisposable
         _notifyIcon.Visible = false;
         _notifyIcon.Dispose();
         _currentIcon?.Dispose();
+        _themeIconFactory.Dispose();
     }
 
     private void OnUserPreferenceChanged(object? sender, UserPreferenceChangedEventArgs e)

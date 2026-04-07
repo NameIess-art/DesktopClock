@@ -2,6 +2,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Drawing.Text;
+using System.Globalization;
 using System.Windows.Forms;
 using DesktopClock.Helpers;
 using DesktopClock.Models;
@@ -16,6 +17,7 @@ public sealed class ClockForm : Form
     private const double MaximumScale = 4.0;
     private const float HandleSize = 12f;
     private const double ResizeSensitivity = 280.0;
+    private static readonly CultureInfo ChineseCulture = CultureInfo.GetCultureInfo("zh-CN");
 
     private readonly ClockSettings _settings = ClockSettings.CreateDefault();
 
@@ -130,7 +132,7 @@ public sealed class ClockForm : Form
                 graphics.FillPath(backgroundBrush, backgroundPath);
             }
 
-            DrawTimeText(graphics, rect);
+            DrawClockText(graphics, rect);
 
             if (_settings.IsEditMode)
             {
@@ -195,30 +197,56 @@ public sealed class ClockForm : Form
         }
     }
 
-    private void DrawTimeText(Graphics graphics, Rectangle bounds)
+    private void DrawClockText(Graphics graphics, Rectangle bounds)
     {
-        using var font = DrawingHelpers.CreateDisplayFont(string.IsNullOrWhiteSpace(_settings.FontFamilyName) ? "Segoe UI" : _settings.FontFamilyName, GetDisplayFontSize(), GraphicsUnit.Pixel);
-        using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-        var textBounds = new RectangleF(0, bounds.Height * 0.08f, bounds.Width, bounds.Height * 0.82f);
-
-        if (_settings.FillMode == TextFillMode.Solid)
+        var visibleItems = GetVisibleItems();
+        if (visibleItems.Count == 0)
         {
-            using var solidBrush = new SolidBrush(DrawingHelpers.ParseColor(
-                DrawingHelpers.EnsureGradientColors(_settings.GradientColors)[0],
-                Color.White));
-            graphics.DrawString(_timeText, font, solidBrush, textBounds, format);
             return;
         }
 
-        var colors = DrawingHelpers.EnsureGradientColors(_settings.GradientColors);
+        using var format = new StringFormat
+        {
+            Alignment = StringAlignment.Center,
+            LineAlignment = StringAlignment.Center,
+            FormatFlags = StringFormatFlags.NoWrap,
+            Trimming = StringTrimming.EllipsisCharacter
+        };
+
+        for (var index = 0; index < visibleItems.Count; index++)
+        {
+            var item = visibleItems[index];
+            var element = _settings.GetElementSettings(item);
+            var text = GetDisplayText(item);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                continue;
+            }
+
+            var textBounds = GetElementBounds(bounds, element, visibleItems.Count, index, item);
+            using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, GetElementFontSize(item, visibleItems.Count), GraphicsUnit.Pixel);
+            using var brush = CreateTextBrush(bounds, element);
+            graphics.DrawString(text, font, brush, textBounds, format);
+        }
+    }
+
+    private Brush CreateTextBrush(Rectangle bounds, ClockElementSettings element)
+    {
+        if (element.FillMode == TextFillMode.Solid)
+        {
+            return new SolidBrush(DrawingHelpers.ParseColor(
+                DrawingHelpers.EnsureGradientColors(element.GradientColors)[0],
+                Color.White));
+        }
+
+        var colors = DrawingHelpers.EnsureGradientColors(element.GradientColors);
         var start = DrawingHelpers.ParseColor(colors[0], Color.White);
         var end = DrawingHelpers.ParseColor(colors[1], Color.Gainsboro);
-        var mode = _settings.GradientDirection == GradientDirection.LeftToRight
+        var mode = element.GradientDirection == GradientDirection.LeftToRight
             ? LinearGradientMode.Horizontal
             : LinearGradientMode.Vertical;
 
-        using var gradientBrush = new LinearGradientBrush(bounds, start, end, mode);
-        graphics.DrawString(_timeText, font, gradientBrush, textBounds, format);
+        return new LinearGradientBrush(bounds, start, end, mode);
     }
 
     private void DrawHandles(Graphics graphics)
@@ -240,10 +268,33 @@ public sealed class ClockForm : Form
         yield return new RectangleF(Width - HandleSize - 4, Height - HandleSize - 4, HandleSize, HandleSize);
     }
 
-    private float GetDisplayFontSize()
+    private float GetElementFontSize(ClockDisplayItem item, int visibleCount)
     {
-        var divisor = _settings.DisplayFormat == ClockDisplayFormat.HoursMinutes ? 1.55f : 2.0f;
-        return Math.Max(44f, Height / divisor);
+        if (item == ClockDisplayItem.Time)
+        {
+            var previewText = ClockFormatHelpers.FormatDateTime(
+                new DateTime(2026, 4, 4, 12, 34, 56),
+                _settings.TimeElement.CustomFormat,
+                ClockFormatHelpers.GetFallbackTimeFormat(_settings.DisplayFormat),
+                CultureInfo.CurrentCulture);
+            var divisor = previewText.Length switch
+            {
+                <= 5 => 1.55f,
+                <= 8 => 2.0f,
+                <= 12 => 2.45f,
+                _ => 2.9f
+            };
+            var baseSize = Math.Max(44f, Height / divisor);
+            return visibleCount > 1 ? Math.Max(32f, baseSize * 0.74f) : baseSize;
+        }
+
+        var ratio = visibleCount switch
+        {
+            1 => 0.24f,
+            2 => 0.18f,
+            _ => 0.145f
+        };
+        return Math.Max(14f, Height * ratio);
     }
 
     private float GetScaledCornerRadius()
@@ -296,6 +347,11 @@ public sealed class ClockForm : Form
         _settings.Scale = settings.Scale;
         _settings.IsEditMode = settings.IsEditMode;
         _settings.DisplayFormat = settings.DisplayFormat;
+        _settings.TimeElement = CloneElement(settings.TimeElement);
+        _settings.DateElement = CloneElement(settings.DateElement);
+        _settings.WeekdayElement = CloneElement(settings.WeekdayElement);
+        _settings.ShowWeekday = settings.ShowWeekday;
+        _settings.ShowDate = settings.ShowDate;
         _settings.BackgroundColor = settings.BackgroundColor;
         _settings.BackgroundOpacity = settings.BackgroundOpacity;
         _settings.BackgroundWidth = settings.BackgroundWidth;
@@ -440,6 +496,99 @@ public sealed class ClockForm : Form
         }
 
         return ResizeCorner.None;
+    }
+
+    private IReadOnlyList<ClockDisplayItem> GetVisibleItems()
+    {
+        var items = new List<ClockDisplayItem>(3);
+
+        if (_settings.TimeElement.IsVisible)
+        {
+            items.Add(ClockDisplayItem.Time);
+        }
+
+        if (_settings.WeekdayElement.IsVisible)
+        {
+            items.Add(ClockDisplayItem.Weekday);
+        }
+
+        if (_settings.DateElement.IsVisible)
+        {
+            items.Add(ClockDisplayItem.Date);
+        }
+
+        return items;
+    }
+
+    private string GetDisplayText(ClockDisplayItem item)
+    {
+        var now = DateTime.Now;
+        return item switch
+        {
+            ClockDisplayItem.Time => _timeText,
+            ClockDisplayItem.Date => FormatDateTime(now, _settings.DateElement.CustomFormat, "yyyy-MM-dd", CultureInfo.InvariantCulture),
+            ClockDisplayItem.Weekday => FormatDateTime(now, _settings.WeekdayElement.CustomFormat, "dddd", ChineseCulture),
+            _ => string.Empty
+        };
+    }
+
+    private RectangleF GetElementBounds(Rectangle bounds, ClockElementSettings element, int visibleCount, int itemIndex, ClockDisplayItem item)
+    {
+        var ySlots = visibleCount switch
+        {
+            1 => new[] { 0.50f },
+            2 => new[] { 0.36f, 0.70f },
+            _ => new[] { 0.28f, 0.58f, 0.78f }
+        };
+
+        var slotCenterY = ySlots[Math.Min(itemIndex, ySlots.Length - 1)];
+        var topInset = _settings.IsEditMode ? 22f : 0f;
+        var availableHeight = bounds.Height - topInset;
+        var centerY = topInset + (availableHeight * slotCenterY);
+        var rectHeight = item == ClockDisplayItem.Time
+            ? (visibleCount == 1 ? bounds.Height * 0.56f : bounds.Height * 0.34f)
+            : (visibleCount == 1 ? bounds.Height * 0.24f : bounds.Height * 0.16f);
+        var rectWidth = item == ClockDisplayItem.Time ? bounds.Width * 0.96f : bounds.Width * 0.84f;
+        var offsetX = (float)(_settings.Scale * element.OffsetX);
+        var offsetY = (float)(_settings.Scale * element.OffsetY);
+
+        return new RectangleF(
+            ((bounds.Width - rectWidth) / 2f) + offsetX,
+            centerY - (rectHeight / 2f) + offsetY,
+            rectWidth,
+            rectHeight);
+    }
+
+    private static ClockElementSettings CloneElement(ClockElementSettings source)
+    {
+        return new ClockElementSettings
+        {
+            IsVisible = source.IsVisible,
+            CustomFormat = source.CustomFormat,
+            FontFamilyName = source.FontFamilyName,
+            FillMode = source.FillMode,
+            GradientColors = source.GradientColors.ToList(),
+            GradientDirection = source.GradientDirection,
+            OffsetX = source.OffsetX,
+            OffsetY = source.OffsetY
+        };
+    }
+
+    private static string FormatDateTime(DateTime value, string? customFormat, string fallbackFormat, IFormatProvider provider)
+    {
+        if (string.IsNullOrWhiteSpace(customFormat))
+        {
+            return value.ToString(fallbackFormat, provider);
+        }
+
+        try
+        {
+            return value.ToString(customFormat, provider);
+        }
+        catch (FormatException)
+        {
+            return value.ToString(fallbackFormat, provider);
+        }
     }
 
     private enum ResizeCorner

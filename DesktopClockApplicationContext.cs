@@ -1,6 +1,7 @@
 using System.Windows.Forms;
 using DesktopClock.Dialogs;
 using DesktopClock.Forms;
+using DesktopClock.Helpers;
 using DesktopClock.Models;
 using DesktopClock.Services;
 
@@ -41,14 +42,13 @@ internal sealed class DesktopClockApplicationContext : ApplicationContext
 
         _trayIconService = new TrayIconService(
             onEditModeChanged: SetEditMode,
-            onDisplayFormatChanged: SetDisplayFormat,
             onSettingsRequested: OpenSettings,
             onLaunchAtStartupChanged: SetLaunchAtStartup,
             onExitRequested: ExitApplication);
 
         _trayIconService.UpdateState(_settings);
         _clockUpdateScheduler.TimeTextChanged += OnTimeTextChanged;
-        _clockUpdateScheduler.Start(_settings.DisplayFormat);
+        _clockUpdateScheduler.Start(_settings.TimeElement.CustomFormat);
 
         ApplySettings(persistNow: false, refreshSchedule: false, scheduleSave: false);
         EnsureLaunchAtStartup();
@@ -63,6 +63,7 @@ internal sealed class DesktopClockApplicationContext : ApplicationContext
         SaveSettings();
         _trayIconService.Dispose();
         _clockUpdateScheduler.Dispose();
+        DrawingHelpers.DisposeCachedResources();
         base.ExitThreadCore();
     }
 
@@ -74,7 +75,7 @@ internal sealed class DesktopClockApplicationContext : ApplicationContext
 
         if (refreshSchedule)
         {
-            _clockUpdateScheduler.Start(_settings.DisplayFormat);
+            _clockUpdateScheduler.Start(_settings.TimeElement.CustomFormat);
         }
 
         EnsureLaunchAtStartup();
@@ -95,12 +96,6 @@ internal sealed class DesktopClockApplicationContext : ApplicationContext
     {
         _settings.IsEditMode = isEnabled;
         ApplySettings(persistNow: true, refreshSchedule: false, scheduleSave: false);
-    }
-
-    private void SetDisplayFormat(ClockDisplayFormat displayFormat)
-    {
-        _settings.DisplayFormat = displayFormat;
-        ApplySettings(persistNow: true, refreshSchedule: true, scheduleSave: false);
     }
 
     private void SetLaunchAtStartup(bool isEnabled)
@@ -129,7 +124,7 @@ internal sealed class DesktopClockApplicationContext : ApplicationContext
 
     private void OnEditorSettingsChanged()
     {
-        ApplySettings(persistNow: false, refreshSchedule: false, scheduleSave: true);
+        ApplySettings(persistNow: false, refreshSchedule: true, scheduleSave: true);
     }
 
     private void OnTimeTextChanged(string timeText)

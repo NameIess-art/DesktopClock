@@ -8,7 +8,7 @@
 
 - 桌面层显示，普通情况下不覆盖常规应用窗口
 - 编辑模式与展示模式分离
-- 支持 `HH:mm` 和 `HH:mm:ss` 两种显示格式
+- 支持时间、日期、星期拆分显示，并允许时间使用自定义 .NET 格式
 - 按显示格式切换刷新策略，避免无效刷新
 - 支持背景颜色、透明度、尺寸、圆角调整
 - 支持字体切换、字体搜索、打开系统字体文件夹
@@ -71,8 +71,8 @@
 
 ## 显示格式与刷新策略
 
-- `HH:mm`：按下一分钟边界刷新
-- `HH:mm:ss`：按下一秒边界刷新
+- 不含秒的时间格式：按下一分钟边界刷新
+- 含秒的时间格式：按下一秒边界刷新
 
 界面只在文本实际变化时更新，尽量减少无意义重绘。
 
@@ -92,11 +92,7 @@ C:\Users\<用户名>\AppData\Local\DesktopClock\settings.json
 
 ## 运行要求
 
-当前仓库默认发布为“框架依赖单文件”版本，因此目标机器需要安装：
-
-- `.NET 8 Windows Desktop Runtime`
-
-如果本机没有运行时，应用将无法直接启动。
+当前仓库支持发布为 `win-x64` 自包含单文件版本，目标机器无需额外安装 `.NET 8 Windows Desktop Runtime` 也可以直接运行。
 
 ## 开发运行
 
@@ -112,7 +108,7 @@ dotnet run
 ### 框架依赖单文件
 
 ```powershell
-dotnet publish -c Release -r win-x64 --self-contained false /p:PublishSingleFile=true
+dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true /p:IncludeNativeLibrariesForSelfExtract=true /p:EnableCompressionInSingleFile=true
 ```
 
 发布产物通常位于：
