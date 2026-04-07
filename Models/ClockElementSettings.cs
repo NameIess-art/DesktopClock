@@ -10,6 +10,8 @@ public sealed class ClockElementSettings
 
     public string FontFamilyName { get; set; } = "Segoe UI";
 
+    public double SizeScale { get; set; } = 1.0;
+
     [JsonConverter(typeof(JsonStringEnumConverter))]
     public TextFillMode FillMode { get; set; } = TextFillMode.Gradient;
 
@@ -38,6 +40,7 @@ public sealed class ClockElementSettings
             FontFamilyName = string.IsNullOrWhiteSpace(fallbackFontFamilyName) ? "Segoe UI" : fallbackFontFamilyName;
         }
 
+        SizeScale = NormalizeScale(SizeScale);
         CustomFormat = (CustomFormat ?? string.Empty).Trim();
 
         GradientColors = GradientColors?
@@ -79,5 +82,15 @@ public sealed class ClockElementSettings
         }
 
         return Math.Clamp(value, -500, 500);
+    }
+
+    private static double NormalizeScale(double value)
+    {
+        if (double.IsNaN(value) || double.IsInfinity(value))
+        {
+            return 1.0;
+        }
+
+        return Math.Clamp(value, 0.3, 4.0);
     }
 }

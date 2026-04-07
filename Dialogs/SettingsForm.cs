@@ -1,4 +1,4 @@
-using System.Drawing;
+﻿using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Globalization;
 using System.Windows.Forms;
@@ -35,6 +35,7 @@ public sealed class SettingsForm : Form
 
     private readonly ComboBox _displayTargetComboBox = CreateComponentComboBox();
     private readonly CheckBox _visibleCheckBox = new() { Dock = DockStyle.Fill, Text = "显示该组件" };
+    private readonly NumericUpDown _sizeScaleUpDown = new() { Minimum = 0.30M, Maximum = 4.00M, DecimalPlaces = 2, Increment = 0.05M, Dock = DockStyle.Fill };
     private readonly ComboBox _timeFormatComboBox = new() { Dock = DockStyle.Fill, DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _customFormatTextBox = new() { Dock = DockStyle.Fill, PlaceholderText = "输入自定义格式" };
     private readonly Label _displayHintLabel = new() { Dock = DockStyle.Fill, ForeColor = Color.FromArgb(71, 85, 105), TextAlign = ContentAlignment.MiddleLeft };
@@ -85,6 +86,7 @@ public sealed class SettingsForm : Form
         _fontTargetComboBox.SelectedIndexChanged += OnComponentTargetChanged;
 
         _visibleCheckBox.CheckedChanged += OnVisibleCheckBoxChanged;
+        _sizeScaleUpDown.ValueChanged += OnSizeScaleChanged;
         _timeFormatComboBox.SelectedIndexChanged += OnTimeFormatChanged;
         _customFormatTextBox.TextChanged += OnCustomFormatChanged;
         _offsetXUpDown.ValueChanged += OnOffsetValueChanged;
@@ -226,12 +228,13 @@ public sealed class SettingsForm : Form
     private void BuildDisplayPanel()
     {
         var layout = CreateEditorTable();
+        AddRow(layout, 4, "组件大小", _sizeScaleUpDown, null, null, 3);
         AddRow(layout, 0, "编辑组件", _displayTargetComboBox, null, null, 3);
         AddRow(layout, 1, "显示状态", _visibleCheckBox, null, null, 3);
         AddRow(layout, 2, "时间格式", _timeFormatComboBox, null, null, 3);
         AddRow(layout, 3, "自定义格式", _customFormatTextBox, null, null, 3);
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.Controls.Add(_displayHintLabel, 0, 4);
+        layout.Controls.Add(_displayHintLabel, 0, 5);
         layout.SetColumnSpan(_displayHintLabel, 3);
         _displayPanel.Controls.Add(layout);
     }
@@ -334,6 +337,7 @@ public sealed class SettingsForm : Form
         var resolvedTimeFormat = ClockFormatHelpers.NormalizeTimeFormat(_settings.TimeElement.CustomFormat, _settings.DisplayFormat);
 
         _visibleCheckBox.Checked = element.IsVisible;
+        _sizeScaleUpDown.Value = CoerceNumericValue(_sizeScaleUpDown, element.SizeScale);
         _timeFormatComboBox.SelectedIndex = isTime ? GetTimeFormatPresetIndex(resolvedTimeFormat) : -1;
         _timeFormatComboBox.Enabled = isTime;
         _customFormatTextBox.Text = isTime ? resolvedTimeFormat : element.CustomFormat;
@@ -342,7 +346,6 @@ public sealed class SettingsForm : Form
         _displayHintLabel.Text = GetDisplayHint(_selectedItem);
 
         _offsetXUpDown.Value = CoerceNumericValue(_offsetXUpDown, element.OffsetX);
-        _offsetYUpDown.Value = CoerceNumericValue(_offsetYUpDown, element.OffsetY);
         _positionHintLabel.Text = "偏移量以默认布局为基准，单位为像素。";
 
         _fillModeComboBox.SelectedIndex = element.FillMode == TextFillMode.Solid ? 0 : 1;
@@ -419,6 +422,16 @@ public sealed class SettingsForm : Form
         NotifyChanged();
     }
 
+    private void OnSizeScaleChanged(object? sender, EventArgs e)
+    {
+        if (_isLoadingValues)
+        {
+            return;
+        }
+
+        _settings.GetElementSettings(_selectedItem).SizeScale = (double)_sizeScaleUpDown.Value;
+        NotifyChanged();
+    }
     private void OnTimeFormatChanged(object? sender, EventArgs e)
     {
         if (_isLoadingValues || _selectedItem != ClockDisplayItem.Time || _timeFormatComboBox.SelectedIndex < 0)
@@ -579,7 +592,7 @@ public sealed class SettingsForm : Form
         e.Graphics.Clear(Color.FromArgb(226, 232, 240));
 
         var element = _settings.GetElementSettings(_selectedItem);
-        using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, GetPreviewFontSize(_selectedItem), GraphicsUnit.Pixel);
+        using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, GetPreviewFontSize(_selectedItem) * (float)element.SizeScale, GraphicsUnit.Pixel);
         using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         var rect = _colorPreviewPanel.ClientRectangle;
         using var brush = CreateElementBrush(rect, element);
@@ -590,7 +603,7 @@ public sealed class SettingsForm : Form
     {
         e.Graphics.Clear(Color.FromArgb(226, 232, 240));
         var element = _settings.GetElementSettings(_selectedItem);
-        using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, GetPreviewFontSize(_selectedItem), GraphicsUnit.Pixel);
+        using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, GetPreviewFontSize(_selectedItem) * (float)element.SizeScale, GraphicsUnit.Pixel);
         using var brush = new SolidBrush(Color.White);
         using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
         e.Graphics.DrawString(GetPreviewText(_selectedItem), font, brush, _fontPreviewPanel.ClientRectangle, format);
@@ -630,7 +643,7 @@ public sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             DropDownStyle = ComboBoxStyle.DropDownList
         };
-        comboBox.Items.AddRange(new object[] { "时间", "日期", "星期" });
+        comboBox.Items.AddRange(new object[] { "鏃堕棿", "鏃ユ湡", "鏄熸湡" });
         comboBox.SelectedIndex = 0;
         return comboBox;
     }
@@ -723,14 +736,14 @@ public sealed class SettingsForm : Form
     {
         if (item == ClockDisplayItem.Time)
         {
-            return "时间支持 .NET 日期时间格式，例如 HH:mm、HH:mm:ss 或 HH:mm:ss tt。";
+            return "时间支持 .NET 日期时间格式，例如 HH:mm、HH:mm:ss，并支持单独调整大小。";
         }
 
         return item switch
         {
-            ClockDisplayItem.Time => "时间组件使用固定格式选项。",
-            ClockDisplayItem.Date => "日期支持 .NET 日期格式，例如 yyyy/MM/dd 或 MM-dd。",
-            ClockDisplayItem.Weekday => "星期支持 .NET 日期格式，例如 ddd 或 dddd。",
+            ClockDisplayItem.Time => "时间组件支持格式与大小单独调整。",
+            ClockDisplayItem.Date => "日期支持 .NET 日期格式，也支持单独调整大小。",
+            ClockDisplayItem.Weekday => "星期支持 .NET 日期格式，也支持单独调整大小。",
             _ => string.Empty
         };
     }
@@ -828,3 +841,7 @@ public sealed class SettingsForm : Form
         return new LinearGradientBrush(bounds, start, end, mode);
     }
 }
+
+
+
+

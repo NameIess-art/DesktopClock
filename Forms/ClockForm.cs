@@ -288,7 +288,8 @@ public sealed class ClockForm : Form
                 _ => 2.9f
             };
             var baseSize = Math.Max(44f, Height / divisor);
-            return visibleCount > 1 ? Math.Max(32f, baseSize * 0.74f) : baseSize;
+            var scaledSize = visibleCount > 1 ? Math.Max(32f, baseSize * 0.74f) : baseSize;
+            return scaledSize * (float)_settings.TimeElement.SizeScale;
         }
 
         var ratio = visibleCount switch
@@ -297,7 +298,7 @@ public sealed class ClockForm : Form
             2 => 0.18f,
             _ => 0.145f
         };
-        return Math.Max(14f, Height * ratio);
+        return Math.Max(14f, Height * ratio) * (float)_settings.GetElementSettings(item).SizeScale;
     }
 
     private float GetFittedFontSize(Graphics graphics, string? fontFamilyName, string text, RectangleF bounds, float preferredFontSize)
@@ -633,6 +634,7 @@ public sealed class ClockForm : Form
             IsVisible = source.IsVisible,
             CustomFormat = source.CustomFormat,
             FontFamilyName = source.FontFamilyName,
+            SizeScale = source.SizeScale,
             FillMode = source.FillMode,
             GradientColors = source.GradientColors.ToList(),
             GradientDirection = source.GradientDirection,
