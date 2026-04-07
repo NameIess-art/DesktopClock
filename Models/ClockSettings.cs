@@ -5,6 +5,9 @@ namespace DesktopClock.Models;
 
 public sealed class ClockSettings
 {
+    public const double MinimumBackgroundWidth = 320;
+    public const double MinimumBackgroundHeight = 120;
+
     public double WindowLeft { get; set; } = 120;
 
     public double WindowTop { get; set; } = 120;
@@ -30,9 +33,9 @@ public sealed class ClockSettings
 
     public double BackgroundOpacity { get; set; } = 0.55;
 
-    public double BackgroundWidth { get; set; } = 320;
+    public double BackgroundWidth { get; set; } = MinimumBackgroundWidth;
 
-    public double BackgroundHeight { get; set; } = 120;
+    public double BackgroundHeight { get; set; } = MinimumBackgroundHeight;
 
     public double CornerRadius { get; set; } = 28;
 
@@ -68,8 +71,8 @@ public sealed class ClockSettings
 
         Scale = Clamp(Scale, 0.5, 4.0);
         BackgroundOpacity = Clamp(BackgroundOpacity, 0.0, 1.0);
-        BackgroundWidth = Clamp(BackgroundWidth, 180, 900);
-        BackgroundHeight = Clamp(BackgroundHeight, 72, 360);
+        BackgroundWidth = Clamp(BackgroundWidth, MinimumBackgroundWidth, 900);
+        BackgroundHeight = Clamp(BackgroundHeight, MinimumBackgroundHeight, 360);
         CornerRadius = Clamp(CornerRadius, 0, 120);
 
         if (string.IsNullOrWhiteSpace(BackgroundColor))

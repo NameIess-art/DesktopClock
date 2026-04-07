@@ -29,8 +29,8 @@ public sealed class SettingsForm : Form
 
     private readonly TextBox _backgroundColorTextBox = new() { ReadOnly = true, Dock = DockStyle.Fill };
     private readonly TrackBar _opacityTrackBar = new() { Minimum = 0, Maximum = 100, TickFrequency = 5, Dock = DockStyle.Fill };
-    private readonly NumericUpDown _widthUpDown = new() { Minimum = 180, Maximum = 900, DecimalPlaces = 0, Dock = DockStyle.Fill };
-    private readonly NumericUpDown _heightUpDown = new() { Minimum = 72, Maximum = 360, DecimalPlaces = 0, Dock = DockStyle.Fill };
+    private readonly NumericUpDown _widthUpDown = new() { Minimum = (decimal)ClockSettings.MinimumBackgroundWidth, Maximum = 900, DecimalPlaces = 0, Dock = DockStyle.Fill };
+    private readonly NumericUpDown _heightUpDown = new() { Minimum = (decimal)ClockSettings.MinimumBackgroundHeight, Maximum = 360, DecimalPlaces = 0, Dock = DockStyle.Fill };
     private readonly TrackBar _cornerRadiusTrackBar = new() { Minimum = 0, Maximum = 120, TickFrequency = 4, Dock = DockStyle.Fill };
 
     private readonly ComboBox _displayTargetComboBox = CreateComponentComboBox();
@@ -310,8 +310,8 @@ public sealed class SettingsForm : Form
         _isLoadingValues = true;
         _backgroundColorTextBox.Text = _settings.BackgroundColor;
         _opacityTrackBar.Value = (int)Math.Round(_settings.BackgroundOpacity * 100);
-        _widthUpDown.Value = (decimal)_settings.BackgroundWidth;
-        _heightUpDown.Value = (decimal)_settings.BackgroundHeight;
+        _widthUpDown.Value = CoerceNumericValue(_widthUpDown, _settings.BackgroundWidth);
+        _heightUpDown.Value = CoerceNumericValue(_heightUpDown, _settings.BackgroundHeight);
         _cornerRadiusTrackBar.Value = (int)Math.Round(_settings.CornerRadius);
 
         if (_allFontNames.Count == 0)
@@ -346,6 +346,7 @@ public sealed class SettingsForm : Form
         _displayHintLabel.Text = GetDisplayHint(_selectedItem);
 
         _offsetXUpDown.Value = CoerceNumericValue(_offsetXUpDown, element.OffsetX);
+        _offsetYUpDown.Value = CoerceNumericValue(_offsetYUpDown, element.OffsetY);
         _positionHintLabel.Text = "偏移量以默认布局为基准，单位为像素。";
 
         _fillModeComboBox.SelectedIndex = element.FillMode == TextFillMode.Solid ? 0 : 1;
@@ -643,7 +644,7 @@ public sealed class SettingsForm : Form
             Dock = DockStyle.Fill,
             DropDownStyle = ComboBoxStyle.DropDownList
         };
-        comboBox.Items.AddRange(new object[] { "鏃堕棿", "鏃ユ湡", "鏄熸湡" });
+        comboBox.Items.AddRange(new object[] { "时间", "日期", "星期" });
         comboBox.SelectedIndex = 0;
         return comboBox;
     }

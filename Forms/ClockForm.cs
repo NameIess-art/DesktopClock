@@ -18,6 +18,8 @@ public sealed class ClockForm : Form
     private const float HandleSize = 12f;
     private const double ResizeSensitivity = 280.0;
     private const float MinFontSize = 10f;
+    private const float BaseContentWidth = 320f;
+    private const float BaseContentHeight = 120f;
     private static readonly CultureInfo ChineseCulture = CultureInfo.GetCultureInfo("zh-CN");
 
     private readonly ClockSettings _settings = ClockSettings.CreateDefault();
@@ -201,6 +203,8 @@ public sealed class ClockForm : Form
             return;
         }
 
+        var contentBounds = GetContentBounds(bounds);
+
         using var format = new StringFormat
         {
             Alignment = StringAlignment.Center,
@@ -219,12 +223,12 @@ public sealed class ClockForm : Form
                 continue;
             }
 
-            var textBounds = GetElementBounds(bounds, element, visibleItems.Count, index, item);
+            var textBounds = GetElementBounds(contentBounds, visibleItems, index, item);
             var drawBounds = InsetBounds(
                 textBounds,
                 Math.Max(4f, textBounds.Width * 0.02f),
                 Math.Max(2f, textBounds.Height * 0.08f));
-            var preferredFontSize = GetElementFontSize(item, visibleItems.Count);
+            var preferredFontSize = GetElementFontSize(item, visibleItems.Count, contentBounds);
             var fittedFontSize = GetFittedFontSize(graphics, element.FontFamilyName, text, drawBounds, preferredFontSize);
 
             using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, fittedFontSize, GraphicsUnit.Pixel);
@@ -271,8 +275,10 @@ public sealed class ClockForm : Form
         yield return new RectangleF(Width - HandleSize - 4, Height - HandleSize - 4, HandleSize, HandleSize);
     }
 
-    private float GetElementFontSize(ClockDisplayItem item, int visibleCount)
+    private float GetElementFontSize(ClockDisplayItem item, int visibleCount, RectangleF layoutBounds)
     {
+        var layoutHeight = Math.Max(60f, layoutBounds.Height);
+
         if (item == ClockDisplayItem.Time)
         {
             var previewText = ClockFormatHelpers.FormatDateTime(
@@ -287,7 +293,7 @@ public sealed class ClockForm : Form
                 <= 12 => 2.45f,
                 _ => 2.9f
             };
-            var baseSize = Math.Max(44f, Height / divisor);
+            var baseSize = Math.Max(44f, layoutHeight / divisor);
             var scaledSize = visibleCount > 1 ? Math.Max(32f, baseSize * 0.74f) : baseSize;
             return scaledSize * (float)_settings.TimeElement.SizeScale;
         }
@@ -298,7 +304,7 @@ public sealed class ClockForm : Form
             2 => 0.18f,
             _ => 0.145f
         };
-        return Math.Max(14f, Height * ratio) * (float)_settings.GetElementSettings(item).SizeScale;
+        return Math.Max(14f, layoutHeight * ratio) * (float)_settings.GetElementSettings(item).SizeScale;
     }
 
     private float GetFittedFontSize(Graphics graphics, string? fontFamilyName, string text, RectangleF bounds, float preferredFontSize)
@@ -343,11 +349,29 @@ public sealed class ClockForm : Form
         return (float)Math.Min(scaled, Math.Min(Width, Height) / 2.0);
     }
 
+    private RectangleF GetContentBounds(Rectangle bounds)
+    {
+        var scale = (float)_settings.Scale;
+        var horizontalPadding = BaseContentWidth * 0.02f * scale;
+        var verticalPadding = BaseContentHeight * 0.04f * scale;
+        var contentWidth = BaseContentWidth * 0.96f * scale;
+        var contentHeight = BaseContentHeight * 0.92f * scale;
+
+        return new RectangleF(
+            bounds.Left + horizontalPadding,
+            bounds.Top + verticalPadding,
+            contentWidth,
+            contentHeight);
+    }
+
     private void UpdateFormBounds()
     {
+        var minimumWidth = (int)Math.Round(BaseContentWidth * (float)_settings.Scale);
+        var minimumHeight = (int)Math.Round(BaseContentHeight * (float)_settings.Scale);
+
         Size = new Size(
-            Math.Max(120, (int)Math.Round(_settings.BackgroundWidth * _settings.Scale)),
-            Math.Max(60, (int)Math.Round(_settings.BackgroundHeight * _settings.Scale)));
+            Math.Max(minimumWidth, (int)Math.Round(_settings.BackgroundWidth * _settings.Scale)),
+            Math.Max(minimumHeight, (int)Math.Round(_settings.BackgroundHeight * _settings.Scale)));
 
         Left = (int)Math.Round(_settings.WindowLeft);
         Top = (int)Math.Round(_settings.WindowTop);
@@ -572,29 +596,51 @@ public sealed class ClockForm : Form
         };
     }
 
-    private RectangleF GetElementBounds(Rectangle bounds, ClockElementSettings element, int visibleCount, int itemIndex, ClockDisplayItem item)
+    private RectangleF GetElementBounds(RectangleF bounds, IReadOnlyList<ClockDisplayItem> visibleItems, int itemIndex, ClockDisplayItem item)
     {
-        var ySlots = visibleCount switch
-        {
-            1 => new[] { 0.50f },
-            2 => new[] { 0.36f, 0.70f },
-            _ => new[] { 0.28f, 0.58f, 0.78f }
-        };
-
-        var slotCenterY = ySlots[Math.Min(itemIndex, ySlots.Length - 1)];
-        var centerY = bounds.Height * slotCenterY;
-        var rectHeight = item == ClockDisplayItem.Time
-            ? (visibleCount == 1 ? bounds.Height * 0.56f : bounds.Height * 0.34f)
-            : (visibleCount == 1 ? bounds.Height * 0.24f : bounds.Height * 0.16f);
-        var rectWidth = item == ClockDisplayItem.Time ? bounds.Width * 0.96f : bounds.Width * 0.84f;
+        var element = _settings.GetElementSettings(item);
+        var scale = Math.Max(0.3f, (float)element.SizeScale);
+        var anchorY = GetElementAnchorY(bounds, visibleItems.Count, itemIndex);
+        var baseHeight = GetElementBaseHeight(bounds.Height, visibleItems.Count, item);
+        var baseWidth = item == ClockDisplayItem.Time ? bounds.Width * 0.96f : bounds.Width * 0.84f;
+        var rectHeight = Math.Min(bounds.Height * 0.9f, Math.Max(24f, baseHeight * scale));
+        var rectWidth = Math.Min(bounds.Width * 0.98f, Math.Max(80f, baseWidth * (0.85f + ((scale - 1f) * 0.2f))));
         var offsetX = (float)(_settings.Scale * element.OffsetX);
         var offsetY = (float)(_settings.Scale * element.OffsetY);
+        var left = bounds.Left + ((bounds.Width - rectWidth) / 2f) + offsetX;
+        var top = anchorY - (rectHeight / 2f) + offsetY;
 
         return new RectangleF(
-            ((bounds.Width - rectWidth) / 2f) + offsetX,
-            centerY - (rectHeight / 2f) + offsetY,
+            left,
+            Math.Clamp(top, bounds.Top, Math.Max(bounds.Top, bounds.Bottom - rectHeight)),
             rectWidth,
             rectHeight);
+    }
+
+    private static float GetElementAnchorY(RectangleF bounds, int visibleCount, int itemIndex)
+    {
+        var anchors = visibleCount switch
+        {
+            <= 1 => new[] { 0.5f },
+            2 => new[] { 0.37f, 0.7f },
+            _ => new[] { 0.3f, 0.58f, 0.8f }
+        };
+
+        var safeIndex = Math.Clamp(itemIndex, 0, anchors.Length - 1);
+        return bounds.Top + (bounds.Height * anchors[safeIndex]);
+    }
+
+    private static float GetElementBaseHeight(float boundsHeight, int visibleCount, ClockDisplayItem item)
+    {
+        return (visibleCount, item) switch
+        {
+            (<= 1, ClockDisplayItem.Time) => boundsHeight * 0.68f,
+            (<= 1, _) => boundsHeight * 0.32f,
+            (2, ClockDisplayItem.Time) => boundsHeight * 0.42f,
+            (2, _) => boundsHeight * 0.24f,
+            (_, ClockDisplayItem.Time) => boundsHeight * 0.34f,
+            _ => boundsHeight * 0.18f
+        };
     }
 
     private void DrawEditModeHint(Graphics graphics, Rectangle bounds)
