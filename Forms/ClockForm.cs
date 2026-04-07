@@ -17,6 +17,7 @@ public sealed class ClockForm : Form
     private const double MaximumScale = 4.0;
     private const float HandleSize = 12f;
     private const double ResizeSensitivity = 280.0;
+    private const float MinFontSize = 10f;
     private static readonly CultureInfo ChineseCulture = CultureInfo.GetCultureInfo("zh-CN");
 
     private readonly ClockSettings _settings = ClockSettings.CreateDefault();
@@ -139,12 +140,7 @@ public sealed class ClockForm : Form
                 using var borderPen = new Pen(Color.FromArgb(180, 255, 255, 255), 1);
                 graphics.DrawPath(borderPen, backgroundPath);
                 DrawHandles(graphics);
-
-                using var infoBrush = new SolidBrush(Color.FromArgb(245, 248, 250));
-                using var infoFont = new Font("Microsoft YaHei UI", Math.Max(9f, (float)(10 * _settings.Scale)), FontStyle.Regular, GraphicsUnit.Pixel);
-                using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
-                var infoRect = new RectangleF(0, 6, Width, 18);
-                graphics.DrawString("编辑模式  拖动移动，滚轮或角点缩放", infoFont, infoBrush, infoRect, format);
+                DrawEditModeHint(graphics, rect);
             }
         }
 
@@ -209,7 +205,7 @@ public sealed class ClockForm : Form
         {
             Alignment = StringAlignment.Center,
             LineAlignment = StringAlignment.Center,
-            FormatFlags = StringFormatFlags.NoWrap,
+            FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.FitBlackBox,
             Trimming = StringTrimming.EllipsisCharacter
         };
 
@@ -224,9 +220,16 @@ public sealed class ClockForm : Form
             }
 
             var textBounds = GetElementBounds(bounds, element, visibleItems.Count, index, item);
-            using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, GetElementFontSize(item, visibleItems.Count), GraphicsUnit.Pixel);
-            using var brush = CreateTextBrush(bounds, element);
-            graphics.DrawString(text, font, brush, textBounds, format);
+            var drawBounds = InsetBounds(
+                textBounds,
+                Math.Max(4f, textBounds.Width * 0.02f),
+                Math.Max(2f, textBounds.Height * 0.08f));
+            var preferredFontSize = GetElementFontSize(item, visibleItems.Count);
+            var fittedFontSize = GetFittedFontSize(graphics, element.FontFamilyName, text, drawBounds, preferredFontSize);
+
+            using var font = DrawingHelpers.CreateDisplayFont(element.FontFamilyName, fittedFontSize, GraphicsUnit.Pixel);
+            using var brush = CreateTextBrush(Rectangle.Round(drawBounds), element);
+            graphics.DrawString(text, font, brush, drawBounds, format);
         }
     }
 
@@ -295,6 +298,42 @@ public sealed class ClockForm : Form
             _ => 0.145f
         };
         return Math.Max(14f, Height * ratio);
+    }
+
+    private float GetFittedFontSize(Graphics graphics, string? fontFamilyName, string text, RectangleF bounds, float preferredFontSize)
+    {
+        if (string.IsNullOrWhiteSpace(text) || bounds.Width <= 1 || bounds.Height <= 1)
+        {
+            return MinFontSize;
+        }
+
+        var low = MinFontSize;
+        var high = Math.Max(MinFontSize, preferredFontSize);
+
+        for (var iteration = 0; iteration < 10; iteration++)
+        {
+            var size = (low + high) / 2f;
+            using var font = DrawingHelpers.CreateDisplayFont(fontFamilyName, size, GraphicsUnit.Pixel);
+            var measured = MeasureText(graphics, text, font);
+
+            if (measured.Width <= bounds.Width && measured.Height <= bounds.Height)
+            {
+                low = size;
+            }
+            else
+            {
+                high = size;
+            }
+        }
+
+        return Math.Max(MinFontSize, low);
+    }
+
+    private static SizeF MeasureText(Graphics graphics, string text, Font font)
+    {
+        using var format = (StringFormat)StringFormat.GenericTypographic.Clone();
+        format.FormatFlags |= StringFormatFlags.NoWrap | StringFormatFlags.FitBlackBox;
+        return graphics.MeasureString(text, font, SizeF.Empty, format);
     }
 
     private float GetScaledCornerRadius()
@@ -542,9 +581,7 @@ public sealed class ClockForm : Form
         };
 
         var slotCenterY = ySlots[Math.Min(itemIndex, ySlots.Length - 1)];
-        var topInset = _settings.IsEditMode ? 22f : 0f;
-        var availableHeight = bounds.Height - topInset;
-        var centerY = topInset + (availableHeight * slotCenterY);
+        var centerY = bounds.Height * slotCenterY;
         var rectHeight = item == ClockDisplayItem.Time
             ? (visibleCount == 1 ? bounds.Height * 0.56f : bounds.Height * 0.34f)
             : (visibleCount == 1 ? bounds.Height * 0.24f : bounds.Height * 0.16f);
@@ -557,6 +594,36 @@ public sealed class ClockForm : Form
             centerY - (rectHeight / 2f) + offsetY,
             rectWidth,
             rectHeight);
+    }
+
+    private void DrawEditModeHint(Graphics graphics, Rectangle bounds)
+    {
+        const string hintText = "编辑模式";
+        using var font = new Font("Microsoft YaHei UI", Math.Max(9f, (float)(10 * _settings.Scale)), FontStyle.Regular, GraphicsUnit.Pixel);
+        var measured = MeasureText(graphics, hintText, font);
+        var badgeWidth = Math.Max(78f, measured.Width + 20f);
+        var badgeHeight = Math.Max(22f, measured.Height + 8f);
+        var badgeRect = new RectangleF(bounds.Right - badgeWidth - 10f, 8f, badgeWidth, badgeHeight);
+
+        using var badgePath = DrawingHelpers.CreateRoundedRectangle(Rectangle.Round(badgeRect), badgeHeight / 2f);
+        using var badgeBrush = new SolidBrush(Color.FromArgb(96, 15, 23, 42));
+        using var textBrush = new SolidBrush(Color.FromArgb(245, 248, 250));
+        using var format = new StringFormat { Alignment = StringAlignment.Center, LineAlignment = StringAlignment.Center };
+
+        graphics.FillPath(badgeBrush, badgePath);
+        graphics.DrawString(hintText, font, textBrush, badgeRect, format);
+    }
+
+    private static RectangleF InsetBounds(RectangleF bounds, float horizontalInset, float verticalInset)
+    {
+        var safeHorizontalInset = Math.Min(horizontalInset, Math.Max(0f, (bounds.Width - 1f) / 2f));
+        var safeVerticalInset = Math.Min(verticalInset, Math.Max(0f, (bounds.Height - 1f) / 2f));
+
+        return RectangleF.FromLTRB(
+            bounds.Left + safeHorizontalInset,
+            bounds.Top + safeVerticalInset,
+            bounds.Right - safeHorizontalInset,
+            bounds.Bottom - safeVerticalInset);
     }
 
     private static ClockElementSettings CloneElement(ClockElementSettings source)
